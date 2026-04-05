@@ -28,12 +28,12 @@ jobs:
     - name: Build inside an emulated aarch64 container and produce wheel
       run: |
         set -euo pipefail
-        # run an emulated aarch64 Ubuntu container and do a native aarch64 build there
         docker run --rm --platform=linux/arm64 \
           -v "${GITHUB_WORKSPACE}":/work -w /work \
           ubuntu:24.04 /bin/bash -lc "
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
+
             apt-get update
             apt-get install -y --no-install-recommends \
               build-essential \
@@ -41,18 +41,25 @@ jobs:
               pkg-config \
               python3-dev \
               python3-pip \
+              python3-venv \
               ca-certificates \
               curl
-            # install rust
+
+            # install rust (non-interactive)
             curl https://sh.rustup.rs -sSf | sh -s -- -y
             export PATH=/root/.cargo/bin:\$PATH
             rustup toolchain install stable
             rustup default stable
-            # python tooling
-            pip3 install --upgrade pip maturin
-            # sanity
+
+            # create and activate a virtualenv for python tooling (avoids PEP668 error)
+            python3 -m venv .venv
+            . .venv/bin/activate
+            pip install --upgrade pip setuptools wheel maturin
+
+            # sanity checks
             python3 --version
             rustc --version
+
             # build wheel (writes to /work/target/wheels because host dir is mounted)
             maturin build --release --strip --interpreter python3
           "
