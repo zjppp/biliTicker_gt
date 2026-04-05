@@ -9,76 +9,72 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # 指定构建目标为 aarch64 (ARM 64位)
-  TARGET_ARCH: aarch64
+  RUST_BACKTRACE: 1
 
 jobs:
   build-arm64:
-    runs-on: ubuntu-24.04 # 使用与你系统一致的 Ubuntu 24.04
-    # 确保 runner 支持 ARM，或者使用模拟（这里假设使用支持 ARM 的 runner 或交叉编译）
-    # 如果是 GitHub Hosted Runner (通常是 x86)，我们需要进行交叉编译或安装 QEMU
-    # 但为了模拟你的真实环境，这里演示如何在原生或模拟的 ARM 环境下构建
+    runs-on: ubuntu-24.04
     
     steps:
     - uses: actions/checkout@v4
 
-    # 1. 安装依赖 (针对 Ubuntu 24.04)
+    # 1. 安装系统依赖 (Ubuntu 24.04 ARM64 原生环境)
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        # 安装 OpenSSL 开发库 (解决 openssl-sys 报错)
-        sudo apt-get install -y libssl-dev pkg-config
-        # 安装 Python 开发头文件 (解决 Python.h 报错)
-        sudo apt-get install -y python3-dev python3-pip
-        # 安装构建工具
-        sudo apt-get install -y build-essential
+        sudo apt-get install -y \
+          libssl-dev \
+          pkg-config \
+          python3-dev \
+          python3-pip \
+          build-essential \
+          curl
 
-    # 2. 配置 Rust 环境
+    # 2. 配置 Rust 环境 (原生 ARM64，不需要交叉编译)
     - name: Setup Rust
       uses: dtolnay/rust-action@stable
       with:
         toolchain: stable
-        target: aarch64-unknown-linux-gnu
 
-    # 3. 关键：配置 Cargo 使用 Git CLI (解决 SSL error)
+    # 3. 配置 Cargo 使用 Git CLI
     - name: Configure Cargo for Git
       run: |
         mkdir -p ~/.cargo
-        echo "[net]" >> ~/.cargo/config.toml
-        echo "git-fetch-with-cli = true" >> ~/.cargo/config.toml
+        cat >> ~/.cargo/config.toml << 'EOF'
+        [net]
+        git-fetch-with-cli = true
+        EOF
         cat ~/.cargo/config.toml
 
     # 4. 安装 Python 工具
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10' # 推荐使用 3.10
+        python-version: '3.10'
 
     - name: Install Maturin
       run: |
-        pip3 install maturin
+        pip3 install --upgrade maturin
 
-    # 5. 构建设置：增加 Swap 防止树莓派内存不足
-    # 树莓派 4GB 内存编译 Rust 容易 OOM，建议增加 2GB Swap
-    - name: Increase Swap Space (RPi Optimization)
+    # 5. 增加 Swap 空间 (防止内存不足)
+    - name: Increase Swap Space
       run: |
-        sudo fallocate -l 2G /swapfile
+        sudo fallocate -l 3G /swapfile
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
+        echo "=== Memory and Swap Info ==="
         free -h
 
     # 6. 执行构建
     - name: Build Wheel
       run: |
-        # 使用 maturin build
-        # --release 开启优化
-        # --strip 去除符号表减小体积
         maturin build --release --strip --interpreter python3
 
     # 7. 上传构建产物
     - name: Upload Wheel
       uses: actions/upload-artifact@v4
       with:
-        name: bili-ticket-gt-python-arm64
+        name: bili-ticket-gt-wheels-arm64
         path: target/wheels/*.whl
+        retention-days: 30
